@@ -1,0 +1,159 @@
+---
+title: "steamgames"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages("tidyverse")
+
+library(tidyverse)
+library(dplyr)
+
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+# Set the column types
+pppcols = cols(LoanNumber = col_character(),
+  DateApproved = col_character(),
+  SBAOfficeCode = col_character(),
+  ProcessingMethod = col_character(),
+  BorrowerName = col_character(),
+  BorrowerAddress = col_character(),
+  BorrowerCity = col_character(),
+  BorrowerState = col_character(),
+  BorrowerZip = col_character(),
+  LoanStatusDate = col_character(),
+  LoanStatus = col_character(),
+  Term = col_double(),
+  SBAGuarantyPercentage = col_double(),
+  InitialApprovalAmount = col_double(),
+  CurrentApprovalAmount = col_double(),
+  UndisbursedAmount = col_double(),
+  FranchiseName = col_character(),
+  ServicingLenderLocationID = col_character(),
+  ServicingLenderName = col_character(),
+  ServicingLenderAddress = col_character(),
+  ServicingLenderCity = col_character(),
+  ServicingLenderState = col_character(),
+  ServicingLenderZip = col_character(),
+  RuralUrbanIndicator = col_character(),
+  HubzoneIndicator = col_character(),
+  LMIIndicator = col_character(),
+  BusinessAgeDescription = col_character(),
+  ProjectCity = col_character(),
+  ProjectCountyName = col_character(),
+  ProjectState = col_character(),
+  ProjectZip = col_character(),
+  CD = col_character(),
+  JobsReported = col_double(),
+  NAICSCode = col_character(),
+  Race = col_character(),
+  Ethnicity = col_character(),
+  UTILITIES_PROCEED = col_double(),
+  PAYROLL_PROCEED = col_double(),
+  MORTGAGE_INTEREST_PROCEED = col_double(),
+  RENT_PROCEED = col_double(),
+  REFINANCE_EIDL_PROCEED = col_double(),
+  HEALTH_CARE_PROCEED = col_double(),
+  DEBT_INTEREST_PROCEED = col_double(),
+  BusinessType = col_character(),
+  OriginatingLenderLocationID = col_character(),
+  OriginatingLender = col_character(),
+  OriginatingLenderCity = col_character(),
+  OriginatingLenderState = col_character(),
+  Gender = col_character(),
+  Veteran = col_character(),
+  NonProfit = col_character(),
+  ForgivenessAmount = col_double(),
+  ForgivenessDate = col_character()
+)
+
+#Get the first file and bind it to all_loans
+foo1 <- read_csv("data/public_up_to_150k_1_210630.csv", col_types = pppcols)
+all_loans <-  foo1
+
+# Bind all the rest
+
+for (i in 2:12) {
+  fileName <- paste("data/public_up_to_150k_", as.character(i), "_210630.csv", sep="")
+  print(paste("Loading", fileName))
+  foo1 <- read_csv(fileName, col_types = pppcols)
+  all_loans<-rbind(all_loans, foo1)
+}
+
+```
+
+This section is for the analysis
+
+```{r}
+naics_codes <- read_csv('data/naics_codes.csv') %>%
+  mutate(NAICSCode= as.character(naics_code)) %>%
+  select(NAICSCode, title)
+
+
+# Get a count by Approval amount. We are looking for the sweet spot for maximum amount associated with a single-person business,
+# which is around $20,833
+# Then we might want to break that up by NAICS code
+all_loans <- all_loans %>% 
+  left_join(naics_codes)
+
+#all_loans %>% head(100) %>% filter(CurrentApprovalAmount <30000)
+
+# This counts by NAICS code the loans that hover around the single person sweet spot
+max1personalLoan <- all_loans %>% 
+  filter((CurrentApprovalAmount >=20830) & (CurrentApprovalAmount <=20835)) %>%
+  group_by(CurrentApprovalAmount, NAICSCode, title) %>%
+  summarise(count=n()) %>%
+  arrange(desc(count))
+
+# Let's sum up all by title!
+top100NAICS <- max1personalLoan %>%
+  group_by(title) %>%
+  summarize(total=sum(count)) %>%
+  arrange(desc(total)) %>%
+  head(100)
+  
+write_csv(top100NAICS, "data/top100.csv")
+
+# NAICS for corn farmers is 111150, shows up a lot!
+
+single_corn_farmers <- all_loans %>% 
+  filter(NAICSCode == "111150") %>% 
+  filter((CurrentApprovalAmount >=20830) & (CurrentApprovalAmount <=20835))
+
+single_beuaty_salons <- all_loans %>% 
+  filter(NAICSCode == "812112") %>% 
+  filter((CurrentApprovalAmount >=20830) & (CurrentApprovalAmount <=20835))
+
+# Can we group by address?
+ppp_by_address <- all_loans %>%
+  group_by(BorrowerAddress, BorrowerCity) %>%
+  summarise(count=n()) %>%
+  arrange(desc(count))
+
+ppp_by_address %>% head(100)
+
+```
+Next chunk of code - all loan applications from 1445 Woodmont Ln
+```{r}
+physical_address_dot_com <- all_loans %>%
+  filter(str_detect(BorrowerAddress, "1445 Woodmont Ln NW"))
+
+murray  <- all_loans %>%
+  filter(str_detect(BorrowerAddress, "5544 S Green Street 0.0"))
+
+uber  <- all_loans %>%
+  filter(str_detect(BorrowerAddress, "1455 Market St Ste 400"))
+```
