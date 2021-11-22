@@ -1,5 +1,5 @@
 ---
-title: "steamgames"
+title: "PPPData"
 output: html_document
 ---
 
@@ -80,6 +80,8 @@ pppcols = cols(LoanNumber = col_character(),
   ForgivenessDate = col_character()
 )
 
+big_loans <- read_csv("data/public_150k_plus_210630.csv", col_types=pppcols)
+
 #Get the first file and bind it to all_loans
 foo1 <- read_csv("data/public_up_to_150k_1_210630.csv", col_types = pppcols)
 all_loans <-  foo1
@@ -93,6 +95,8 @@ for (i in 2:12) {
   all_loans<-rbind(all_loans, foo1)
 }
 
+
+all_loans <- rbind(all_loans, big_loans)
 ```
 
 This section is for the analysis
@@ -114,6 +118,7 @@ all_loans <- all_loans %>%
 # This counts by NAICS code the loans that hover around the single person sweet spot
 max1personalLoan <- all_loans %>% 
   filter((CurrentApprovalAmount >=20830) & (CurrentApprovalAmount <=20835)) %>%
+  filter(JobsReported == 1) %>%
   group_by(CurrentApprovalAmount, NAICSCode, title) %>%
   summarise(count=n()) %>%
   arrange(desc(count))
@@ -131,11 +136,35 @@ write_csv(top100NAICS, "data/top100.csv")
 
 single_corn_farmers <- all_loans %>% 
   filter(NAICSCode == "111150") %>% 
+  filter(JobsReported == 1) %>%
   filter((CurrentApprovalAmount >=20830) & (CurrentApprovalAmount <=20835))
 
-single_beuaty_salons <- all_loans %>% 
+# NAICS for Beauty Salons is 812112
+
+single_beauty_salons <- all_loans %>% 
   filter(NAICSCode == "812112") %>% 
-  filter((CurrentApprovalAmount >=20830) & (CurrentApprovalAmount <=20835))
+  filter(JobsReported == 1) %>%
+  filter((CurrentApprovalAmount >=20830) & (CurrentApprovalAmount <=20835)) 
+
+single_beauty_salons %>%
+  filter(UndisbursedAmount != 0) %>%
+  group_by(OriginatingLender) %>%
+  #summarise(count = n()) %>%
+  summarise(total = sum(UndisbursedAmount)) %>%
+  arrange(desc(total))
+
+# Single beauty salons that have undisbursed funds with Capital Plus Financial as the Originating Lender
+sbs_undisbursed_cpf <- single_beauty_salons %>%
+  filter(UndisbursedAmount != 0) %>%
+  filter(OriginatingLender == "Capital Plus Financial, LLC")
+
+gbcols <- c("Race", "Gender")
+
+# Undisbursed loans by race and gender
+sbs_undisbursed_cpf %>%
+  group_by(across(all_of(gbcols))) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
 
 # Can we group by address?
 ppp_by_address <- all_loans %>%
