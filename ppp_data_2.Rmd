@@ -1,0 +1,200 @@
+---
+title: "PPPData"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen=999)
+#install.packages("tidyverse")
+#install.packages("tidycensus")
+
+library(tidyverse)
+library(lubridate)
+library(tidycensus)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+mykey <- scan("./censusapikey.txt", what=character())
+census_api_key(mykey, install=TRUE, overwrite=TRUE)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+Here is where the files are:
+https://data.sba.gov/dataset/8aa276e2-6cab-4f86-aca4-a7dde42adf24/resource/be89502c-1961-4a79-a44c-979eb3f411a8/download/public_150k_plus_210630.csv
+https://data.sba.gov/dataset/8aa276e2-6cab-4f86-aca4-a7dde42adf24/resource/e796a768-4785-46c1-98a7-8bd3a1ef0ab9/download/public_up_to_150k_1_210630.csv
+
+```{r}
+all_loans <- read_rds("data/all_loans.rds")
+```
+
+
+This section is for the analysis
+
+```{r}
+naics_codes <- read_csv('data/naics_codes.csv') %>%
+  mutate(NAICSCode= as.character(naics_code)) %>%
+  select(NAICSCode, title)
+
+# Then we might want to break that up by NAICS code
+all_loans <- all_loans %>% 
+  left_join(naics_codes)
+
+# Get a count by Approval amount. We are looking for the sweet spot for maximum amount associated with a single-person business,
+# which is around $20,833
+# This counts by NAICS code the loans that hover around the single person sweet spot
+max1personalLoan <- all_loans %>% 
+  filter((CurrentApprovalAmount >=20830) & (CurrentApprovalAmount <=20835)) %>%
+  filter(JobsReported == 1) %>%
+  group_by(CurrentApprovalAmount, NAICSCode, title) %>%
+  summarise(count=n()) %>%
+  arrange(desc(count))
+
+# Let's sum up all by title!
+top100NAICS <- max1personalLoan %>%
+  group_by(title) %>%
+  summarize(total=sum(count)) %>%
+  arrange(desc(total)) %>%
+  head(100)
+  
+write_csv(top100NAICS, "data/top100.csv")
+```
+
+Here we explore the issues with undisbursed loans to individual applicants (businesses with 1 saved job)
+and then undisbursed loans to individual applicants with high salary ($100,000)
+
+```{r}
+# Summarize information about undisbursed loans by Originating Lender
+all_single_loans_summary <- all_loans %>% 
+  filter(JobsReported == 1) %>%
+  mutate(UndisbursedAmount = replace_na(UndisbursedAmount, 0)) %>%
+  mutate(CurrentApprovalAmount = replace_na(CurrentApprovalAmount, 0)) %>%
+  group_by(OriginatingLender) %>%
+  summarise(totalUndisbursed = sum(UndisbursedAmount), totalApproved = sum(CurrentApprovalAmount), count = n() ) %>%
+  mutate(pctUndisbursed = totalUndisbursed/totalApproved) %>%
+  arrange(desc(count))
+
+# Grab the undisbursed loans to applicants listing only a single job reported as being supported
+# where the status date is before 45 days from the time the data was published (06/30/2021). This might account
+# for loans that are still in process
+
+all_single_undisbursed_loans <- all_loans %>% 
+  filter(UndisbursedAmount != 0) %>%
+  filter(JobsReported == 1) %>%
+  filter(mdy(LoanStatusDate) <= mdy("05/15/2021") )
+
+# Summarize by Originating Lender
+all_sdls_summary_by_lender <- all_single_undisbursed_loans %>%
+  group_by(OriginatingLender) %>%
+  summarise(total = sum(UndisbursedAmount), count = n()) %>%
+  arrange(desc(total))
+
+# Summarize by NAICS
+all_sdls_summary_by_naics <- all_single_undisbursed_loans %>%
+  group_by(title) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+
+
+# Get the 5 digit zip
+
+all_single_undisbursed_loans <- all_single_undisbursed_loans %>%
+  mutate(zip5 = str_sub(BorrowerZip, 1, 5))
+
+# Summarize by ZIP code
+all_sdls_summary_by_zip5 <- all_single_undisbursed_loans %>%
+  group_by(zip5) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+
+
+
+all_single_disbursed_loans <- all_loans %>% 
+  filter(UndisbursedAmount == 0) %>%
+  filter(JobsReported == 1)
+
+
+all_single_disbursed_summary <- all_single_disbursed_loans %>%
+  group_by(OriginatingLender) %>%
+  #summarise(count = n()) %>%
+  summarise(total = sum(UndisbursedAmount), count = n()) %>%
+  arrange(desc(total))
+
+# Undisbursed loans by race and gender
+ all_single_undisbursed_loans %>%
+  group_by(across(all_of(gbcols))) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+ 
+all_single_loans <- all_loans %>% 
+  filter(JobsReported == 1) 
+  
+gbcols = c("BorrowerAddress", "BorrowerCity", "BorrowerZip")
+all_single_loans %>%
+  group_by(across(all_of(gbcols))) %>%
+  summarise(total = sum(CurrentApprovalAmount), count = n()) %>%
+  arrange(desc(count))
+ 
+# Maybe look at zip codes and get their racial populations??
+# Can we get an aggregation of count of loans in Zip Codes where the black population is greater than X%
+#
+```
+
+THis is legacy code, maybe delete
+
+```{r}
+single_beauty_salons <- all_loans %>% 
+  filter(NAICSCode == "812112") %>% 
+  filter(JobsReported == 1) %>%
+  filter((CurrentApprovalAmount >=20830) & (CurrentApprovalAmount <=20835)) 
+
+single_beauty_salons %>%
+  filter(UndisbursedAmount != 0) %>%
+  group_by(OriginatingLender) %>%
+  #summarise(count = n()) %>%
+  summarise(total = sum(UndisbursedAmount)) %>%
+  arrange(desc(total))
+
+# Single beauty salons that have undisbursed funds with Capital Plus Financial as the Originating Lender
+sbs_undisbursed_cpf <- single_beauty_salons %>%
+  filter(UndisbursedAmount != 0) %>%
+  filter(OriginatingLender == "Capital Plus Financial, LLC")
+
+gbcols <- c("Race", "Gender")
+
+# Undisbursed loans by race and gender
+sbs_undisbursed_cpf %>%
+  group_by(across(all_of(gbcols))) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+
+# Can we group by address?
+ppp_by_address <- all_loans %>%
+  group_by(BorrowerAddress, BorrowerCity) %>%
+  summarise(count=n()) %>%
+  arrange(desc(count))
+
+ppp_by_address %>% head(100)
+
+```
+
+Next chunk of code - all loan applications from 1445 Woodmont Ln
+```{r}
+physical_address_dot_com <- all_loans %>%
+  filter(str_detect(BorrowerAddress, "1445 Woodmont Ln NW"))
+
+murray  <- all_loans %>%
+  filter(str_detect(BorrowerAddress, "5544 S Green Street 0.0"))
+
+uber  <- all_loans %>%
+  filter(str_detect(BorrowerAddress, "1455 Market St Ste 400"))
+```
+

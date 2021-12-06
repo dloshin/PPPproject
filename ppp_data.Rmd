@@ -5,11 +5,12 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+options(scipen=999)
 #install.packages("tidyverse")
+#install.packages("tidycensus")
 
 library(tidyverse)
-library(dplyr)
-
+library(tidycensus)
 ```
 
 ## R Markdown
@@ -19,10 +20,17 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 ```{r}
-
+mykey <- scan("./censusapikey.txt", what=character())
+census_api_key(mykey, install=TRUE, overwrite=TRUE)
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+Here is where the files are:
+https://data.sba.gov/dataset/8aa276e2-6cab-4f86-aca4-a7dde42adf24/resource/be89502c-1961-4a79-a44c-979eb3f411a8/download/public_150k_plus_210630.csv
+https://data.sba.gov/dataset/8aa276e2-6cab-4f86-aca4-a7dde42adf24/resource/e796a768-4785-46c1-98a7-8bd3a1ef0ab9/download/public_up_to_150k_1_210630.csv
+
 ```{r}
 # Set the column types
 pppcols = cols(LoanNumber = col_character(),
@@ -97,6 +105,7 @@ for (i in 2:12) {
 
 
 all_loans <- rbind(all_loans, big_loans)
+
 ```
 
 This section is for the analysis
@@ -175,6 +184,7 @@ ppp_by_address <- all_loans %>%
 ppp_by_address %>% head(100)
 
 ```
+
 Next chunk of code - all loan applications from 1445 Woodmont Ln
 ```{r}
 physical_address_dot_com <- all_loans %>%
@@ -185,4 +195,56 @@ murray  <- all_loans %>%
 
 uber  <- all_loans %>%
   filter(str_detect(BorrowerAddress, "1455 Market St Ste 400"))
+```
+
+Here we explore the issues with undisbursed loans to individual applicants (businesses with 1 saved job) with high salary ($100,000)
+```{r}
+all_single_loans_sumary <- all_loans %>% 
+  filter(JobsReported == 1) %>%
+  mutate(UndisbursedAmount = replace_na(UndisbursedAmount, 0)) %>%
+  mutate(CurrentApprovalAmount = replace_na(CurrentApprovalAmount, 0)) %>%
+  group_by(OriginatingLender) %>%
+  summarise(totalUndisbursed = sum(UndisbursedAmount), totalApproved = sum(CurrentApprovalAmount), count = n() ) %>%
+  mutate(pctUndisbursed = totalUndisbursed/totalApproved) %>%
+  arrange(desc(count))
+
+
+
+# Grab the ones we care about
+all_single_undisbursed_loans <- all_loans %>% 
+  filter(UndisbursedAmount != 0) %>%
+  filter(JobsReported == 1) #%>%
+  #filter((CurrentApprovalAmount >=20800) & (CurrentApprovalAmount <=20900))
+
+all_single_undisbursed_loans %>%
+  group_by(title) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+
+
+all_single_disbursed_loans <- all_loans %>% 
+  filter(UndisbursedAmount == 0) %>%
+  filter(JobsReported == 1)
+
+all_sdls_summary <- all_single_undisbursed_loans %>%
+  group_by(OriginatingLender) %>%
+  #summarise(count = n()) %>%
+  summarise(total = sum(UndisbursedAmount), count = n()) %>%
+  arrange(desc(total))
+
+all_single_disbursed_summary <- all_single_disbursed_loans %>%
+  group_by(OriginatingLender) %>%
+  #summarise(count = n()) %>%
+  summarise(total = sum(UndisbursedAmount), count = n()) %>%
+  arrange(desc(total))
+
+# Undisbursed loans by race and gender
+ all_single_undisbursed_loans %>%
+  group_by(across(all_of(gbcols))) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count))
+ 
+# Maybe look at zip codes and get their racial populations??
+# Can we get an aggregation of count of loans in Zip Codes where the black population is greater than X%
+#
 ```
