@@ -102,7 +102,7 @@ all_sdls_summary_by_naics <- all_single_undisbursed_loans %>%
   group_by(title) %>%
   summarise(count = n()) %>%
   arrange(desc(count))
-
+# Note the predominance of certain types of businesses (barber shops and beauty salons!)
 
 # Get the 5 digit zip
 
@@ -115,13 +115,13 @@ all_sdls_summary_by_zip5 <- all_single_undisbursed_loans %>%
   summarise(count = n()) %>%
   arrange(desc(count))
 
-
+# All single disbursed loans
 
 all_single_disbursed_loans <- all_loans %>% 
   filter(UndisbursedAmount == 0) %>%
   filter(JobsReported == 1)
 
-
+# Summarize by undisbursed amount and by count of loans
 all_single_disbursed_summary <- all_single_disbursed_loans %>%
   group_by(OriginatingLender) %>%
   #summarise(count = n()) %>%
@@ -134,8 +134,12 @@ all_single_disbursed_summary <- all_single_disbursed_loans %>%
   summarise(count = n()) %>%
   arrange(desc(count))
  
+ 
+ # ALl loans to individuals (sole proprietors, individual S Corps/LLCs, etc.)
 all_single_loans <- all_loans %>% 
   filter(JobsReported == 1) 
+
+# Group by location - looking for patterns
   
 gbcols = c("BorrowerAddress", "BorrowerCity", "BorrowerZip")
 all_single_loans %>%
