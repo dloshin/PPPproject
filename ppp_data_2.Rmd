@@ -13,12 +13,15 @@ library(tidyverse)
 library(lubridate)
 library(tidycensus)
 ```
-
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+#
+In this R program I will executing queries on the full collection of Paycheck Protection program records (as of 06/30/2021) to analyze these 6 issues:
+1) The number and volume of undisbursed loans to individuals applying for loans as single practitioners or sole proprietors.
+2) [This is work done outside of the R program] Reviewing online reviews that applicants have posted about "bad actor" lenders identified in (1).
+3) [This is work done outside of the R program] Looking into the relationships between agents providing a "fast track" application process (in an app) and the same identified "bad actors" from (1).
+4) A review of the predominant business types (based on NAICS classification code) of applicant records whose loans were (as of 06/30/2021) undisbursed.
+5) Apparently there are many applicants who asked for loans representing salary protection for the maximum salary rate ($100,000/year). For many applicants reporting their industry-affiliation via the NAICS code, this salary rate appears to be incongruous with the rates reported by the Bureau of Labor Statistics (BLS), and here we identify the application records for single applications requesting the maximum salary rate.
+6) Similarly, I am comparing the number of loan applications for individuals in a particular NAICS area (barbers/beauticians/cosmetologists) to the estimated number of existing jobs for those professions provided by BLS to raise a question about the veracity of those applicants reported roles.
+7) Back to undisbursed loans - are there particular locations where the applicants' loans wer undisbursed as of 06/30/2021? 
 
 ```{r}
 mykey <- scan("./censusapikey.txt", what=character())
@@ -33,13 +36,14 @@ https://data.sba.gov/dataset/8aa276e2-6cab-4f86-aca4-a7dde42adf24/resource/be895
 https://data.sba.gov/dataset/8aa276e2-6cab-4f86-aca4-a7dde42adf24/resource/e796a768-4785-46c1-98a7-8bd3a1ef0ab9/download/public_up_to_150k_1_210630.csv
 
 ```{r}
+# Read in the data. I prepared the data set from the data downloaded from the SBA
 all_loans <- read_rds("data/all_loans.rds")
 ```
-
 
 This section is for the analysis
 
 ```{r}
+# Read in the NAICS codes refrence table
 naics_codes <- read_csv('data/naics_codes.csv') %>%
   mutate(NAICSCode= as.character(naics_code)) %>%
   select(NAICSCode, title)
@@ -49,7 +53,7 @@ all_loans <- all_loans %>%
   left_join(naics_codes)
 
 # Get a count by Approval amount. We are looking for the sweet spot for maximum amount associated with a single-person business,
-# which is around $20,833
+# which is around $20,833 (=$100000(per year)/12 (months in a year) * 2.5 months)
 # This counts by NAICS code the loans that hover around the single person sweet spot
 max1personalLoan <- all_loans %>% 
   filter((CurrentApprovalAmount >=20830) & (CurrentApprovalAmount <=20835)) %>%
@@ -58,7 +62,7 @@ max1personalLoan <- all_loans %>%
   summarise(count=n()) %>%
   arrange(desc(count))
 
-# Let's sum up all by title!
+# Let's sum up all by NAICS title!
 top100NAICS <- max1personalLoan %>%
   group_by(title) %>%
   summarize(total=sum(count)) %>%
@@ -84,26 +88,29 @@ all_single_loans_summary <- all_loans %>%
 
 # Grab the undisbursed loans to applicants listing only a single job reported as being supported
 # where the status date is before 45 days from the time the data was published (06/30/2021). This might account
-# for loans that are still in process
+# for loans that were still in process as of the end of June
 
 all_single_undisbursed_loans <- all_loans %>% 
   filter(UndisbursedAmount != 0) %>%
   filter(JobsReported == 1) %>%
   filter(mdy(LoanStatusDate) <= mdy("05/15/2021") )
 
-# Summarize by Originating Lender
+# Summarize by Originating Lender to identify questionable lenders
 all_sdls_summary_by_lender <- all_single_undisbursed_loans %>%
   group_by(OriginatingLender) %>%
   summarise(total = sum(UndisbursedAmount), count = n()) %>%
   arrange(desc(total))
 
-# Summarize by NAICS
+# Summarize by NAICS to review the most frequent NAICS categories
 all_sdls_summary_by_naics <- all_single_undisbursed_loans %>%
   group_by(title) %>%
   summarise(count = n()) %>%
   arrange(desc(count))
 # Note the predominance of certain types of businesses (barber shops and beauty salons!)
+```
+This next section calcualtes undisbursed loans by 5-digit ZIP code
 
+```{r}
 # Get the 5 digit zip
 
 all_single_undisbursed_loans <- all_single_undisbursed_loans %>%
@@ -124,7 +131,6 @@ all_single_disbursed_loans <- all_loans %>%
 # Summarize by undisbursed amount and by count of loans
 all_single_disbursed_summary <- all_single_disbursed_loans %>%
   group_by(OriginatingLender) %>%
-  #summarise(count = n()) %>%
   summarise(total = sum(UndisbursedAmount), count = n()) %>%
   arrange(desc(total))
 
@@ -188,17 +194,5 @@ ppp_by_address <- all_loans %>%
 
 ppp_by_address %>% head(100)
 
-```
-
-Next chunk of code - all loan applications from 1445 Woodmont Ln
-```{r}
-physical_address_dot_com <- all_loans %>%
-  filter(str_detect(BorrowerAddress, "1445 Woodmont Ln NW"))
-
-murray  <- all_loans %>%
-  filter(str_detect(BorrowerAddress, "5544 S Green Street 0.0"))
-
-uber  <- all_loans %>%
-  filter(str_detect(BorrowerAddress, "1455 Market St Ste 400"))
 ```
 
